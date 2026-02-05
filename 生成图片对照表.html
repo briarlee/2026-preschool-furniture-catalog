@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>生成图片命名对照表</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 40px; background: #f5f7fa; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        h1 { color: #667eea; margin-bottom: 10px; }
+        p { color: #718096; line-height: 1.6; }
+        .btn { background: #667eea; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 16px; cursor: pointer; margin: 20px 0; }
+        .btn:hover { background: #5a67d8; }
+        .stats { background: #f7fafc; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .stats h3 { margin: 0 0 10px 0; color: #2d3748; }
+        .stat-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
+        .stat-label { color: #718096; }
+        .stat-value { font-weight: 600; color: #2d3748; }
+        .note { background: #fef3c7; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b; }
+        .note h4 { margin: 0 0 10px 0; color: #92400e; }
+        .note ul { margin: 0; padding-left: 20px; color: #78350f; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📋 图片命名对照表生成器</h1>
+        <p>点击下方按钮，生成产品图片命名对照表（Excel格式），方便你按规则命名图片文件。</p>
+
+        <div class="stats" id="stats"></div>
+
+        <div class="note">
+            <h4>📁 命名规则说明</h4>
+            <ul>
+                <li><strong>图片ID格式</strong>：分类前缀 + 序号，如 <code>seating_001</code>、<code>table_015</code></li>
+                <li><strong>唯一性保证</strong>：每个产品都有唯一ID，不会重复</li>
+                <li><strong>图片格式</strong>：支持 .jpg 或 .png</li>
+                <li><strong>存放位置</strong>：将图片放入 <code>images/</code> 文件夹</li>
+            </ul>
+        </div>
+
+        <button class="btn" onclick="generateExcel()">📊 生成对照表Excel</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        // 从主页面引用产品数据
+        const productScript = document.createElement('script');
+        productScript.src = '产品目录.html';
+
+        // 这里直接内嵌读取，通过fetch获取
+        let products = [];
+
+        async function loadProducts() {
+            try {
+                const response = await fetch('产品目录.html');
+                const html = await response.text();
+                // 提取products数组
+                const match = html.match(/const products = \[([\s\S]*?)\];/);
+                if (match) {
+                    // 使用eval解析（仅限本地使用）
+                    products = eval('[' + match[1] + ']');
+                    analyzeData();
+                }
+            } catch(e) {
+                console.error('加载产品数据失败', e);
+                document.getElementById('stats').innerHTML = '<p style="color:red;">加载产品数据失败，请确保与产品目录.html在同一文件夹</p>';
+            }
+        }
+
+        loadProducts();
+
+        // 生成唯一图片ID
+        function generateImageId(product, index, categoryCounters) {
+            const category = product.category || 'other';
+            if (!categoryCounters[category]) {
+                categoryCounters[category] = 0;
+            }
+            categoryCounters[category]++;
+            const num = String(categoryCounters[category]).padStart(3, '0');
+            return `${category}_${num}`;
+        }
+
+        // 统计数据
+        function analyzeData() {
+            const stats = {
+                total: products.length,
+                noModel: 0,
+                noCode: 0,
+                categories: {}
+            };
+
+            products.forEach(p => {
+                if (!p.model) stats.noModel++;
+                if (!p.code) stats.noCode++;
+                stats.categories[p.category] = (stats.categories[p.category] || 0) + 1;
+            });
+
+            // 显示统计
+            let html = '<h3>📊 数据统计</h3>';
+            html += `<div class="stat-row"><span class="stat-label">产品总数</span><span class="stat-value">${stats.total}</span></div>`;
+            html += `<div class="stat-row"><span class="stat-label">缺少型号</span><span class="stat-value">${stats.noModel}</span></div>`;
+            html += `<div class="stat-row"><span class="stat-label">缺少编号</span><span class="stat-value">${stats.noCode}</span></div>`;
+            html += '<div class="stat-row"><span class="stat-label">分类分布</span><span class="stat-value"></span></div>';
+
+            Object.entries(stats.categories).sort((a,b) => b[1] - a[1]).forEach(([cat, count]) => {
+                html += `<div class="stat-row" style="padding-left:20px;"><span class="stat-label">${cat}</span><span class="stat-value">${count}</span></div>`;
+            });
+
+            document.getElementById('stats').innerHTML = html;
+        }
+
+        // 生成Excel对照表
+        async function generateExcel() {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('图片命名对照表');
+
+            // 设置列
+            worksheet.columns = [
+                { header: '图片ID', key: 'imageId', width: 18 },
+                { header: '图片文件名', key: 'fileName', width: 22 },
+                { header: '产品名称', key: 'name', width: 40 },
+                { header: '型号', key: 'model', width: 15 },
+                { header: '编号', key: 'code', width: 15 },
+                { header: '分类', key: 'category', width: 12 },
+                { header: '是否主目录', key: 'main', width: 12 },
+                { header: '图片状态', key: 'status', width: 12 }
+            ];
+
+            // 表头样式
+            worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF667EEA' } };
+            worksheet.getRow(1).height = 25;
+            worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+            // 生成数据
+            const categoryCounters = {};
+            products.forEach((p, idx) => {
+                const imageId = generateImageId(p, idx, categoryCounters);
+                const row = worksheet.addRow({
+                    imageId: imageId,
+                    fileName: imageId + '.jpg',
+                    name: p.name,
+                    model: p.model || '(无)',
+                    code: p.code || '(无)',
+                    category: p.category,
+                    main: p.main ? '是' : '',
+                    status: '待添加'
+                });
+
+                // 交替行背景色
+                if (idx % 2 === 0) {
+                    row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7FAFC' } };
+                }
+
+                // 主目录产品高亮
+                if (p.main) {
+                    row.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6F6D5' } };
+                }
+            });
+
+            // 添加边框
+            worksheet.eachRow((row, rowNumber) => {
+                row.eachCell((cell) => {
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                    };
+                    cell.alignment = { vertical: 'middle' };
+                });
+            });
+
+            // 冻结首行
+            worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+            // 下载
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '产品图片命名对照表.xlsx';
+            a.click();
+            URL.revokeObjectURL(url);
+
+            document.getElementById('result').innerHTML = `
+                <div style="background:#C6F6D5;padding:20px;border-radius:8px;margin-top:20px;">
+                    <strong>✅ 导出成功！</strong><br><br>
+                    <b>下一步操作：</b><br>
+                    1. 打开下载的Excel文件<br>
+                    2. 按照"图片文件名"列命名你的图片<br>
+                    3. 将图片放入 <code>images/</code> 文件夹<br>
+                    4. 完成后告诉我，我会更新产品目录代码
+                </div>
+            `;
+        }
+
+        // 初始化
+        analyzeData();
+    </script>
+</body>
+</html>
